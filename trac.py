@@ -70,9 +70,9 @@ class ComponentContext(Context):
     def GetConfig():
         return DLRBasicConfiguration(CurrentSession, "ComponentContext", Array[ConfigurationPropertyInfo](
             [
-                ConfigurationPropertyInfo("DefaultComponent", "コンポーネントの初期値", System.String, "", None),
-                ConfigurationPropertyInfo("DefaultMilestone", "マイルストーンの初期値", System.String, "", None),
-                ConfigurationPropertyInfo("DefaultPriority", "優先度の初期値", System.String, "", None),
+                ConfigurationPropertyInfo("DefaultComponent", "コンポーネントの初期値", System.String, None, None),
+                ConfigurationPropertyInfo("DefaultMilestone", "マイルストーンの初期値", System.String, None, None),
+                ConfigurationPropertyInfo("DefaultPriority", "優先度の初期値", System.String, None, None),
             ]))
 
     def GetCommands(self):
@@ -99,7 +99,6 @@ class ComponentContext(Context):
     def New(self, args):
         TracContext.Connect()
         nextContext = self.Console.GetContext(DLRContextHelper.Wrap(CurrentSession, "NewComponent", CreateTicketContext), CurrentSession)
-        self.Console.NotifyMessage(("Context: %s") % (nextContext))
         self.Console.PushContext(nextContext)
 
 class MilestoneContext(Context):
@@ -167,10 +166,10 @@ class CreateMilestoneContext(Context):
 
         self.config = DLRBasicConfiguration(self.CurrentSession, "NewMilestone", Array[ConfigurationPropertyInfo](
             [
-                ConfigurationPropertyInfo("Name", "マイルストーン名", System.String, "", None),
-                ConfigurationPropertyInfo("Description", "説明", System.String, "", None),
-                ConfigurationPropertyInfo("Due", "完了期限", System.String, "", None),
-                ConfigurationPropertyInfo("Completed", "完了日", System.String, "", None),
+                ConfigurationPropertyInfo("Name", "マイルストーン名", System.String, None, None),
+                ConfigurationPropertyInfo("Description", "説明", System.String, None, None),
+                ConfigurationPropertyInfo("Due", "完了期限", System.String, None, None),
+                ConfigurationPropertyInfo("Completed", "完了日", System.String, None, None),
             ]))
         self.milestone = Milestone()
         self.isEdit = False
@@ -204,12 +203,12 @@ class CreateMilestoneContext(Context):
         if(self.__isUnixTimestamp(self.milestone.Due)):
             self.config.SetValue("Due", self.milestone.Due)
         else:
-            self.config.SetValue("Due", "")
+            self.config.SetValue("Due", None)
 
         if(self.__isUnixTimestamp(self.milestone.Conmleted)):
             self.config.SetValue("Completed", self.milestone.Conmleted)
         else:
-            self.config.SetValue("Completed", "")
+            self.config.SetValue("Completed", None)
 
         self.isEdit = True
 
@@ -217,13 +216,13 @@ class CreateMilestoneContext(Context):
         self.milestone.Name = self.config.GetValue("Name")
         self.milestone.Description = self.config.GetValue("Description")
 
-        if(self.config.GetValue("Due") != ""):
+        if(self.config.GetValue("Due") != None):
             self.milestone.Due = DateTime.Parse(self.config.GetValue("Due"))
             if(self.__isUnixTimestamp(self.milestone.Due) == False):
                 self.Console.NotifyMessage("日付の指定が不正です")
                 self.Exit()
 
-        if(self.config.GetValue("Completed") != ""):
+        if(self.config.GetValue("Completed") != None):
             self.milestone.Conmleted = DateTime.Parse(self.config.GetValue("Completed"))
             if(self.__isUnixTimestamp(self.milestone.Conmleted) == False):
                 self.Console.NotifyMessage("日付の指定が不正です")
@@ -246,9 +245,10 @@ class TicketContext(Context):
     def GetConfig():
         return DLRBasicConfiguration(CurrentSession, "TicketContext", Array[ConfigurationPropertyInfo](
             [
-                ConfigurationPropertyInfo("DefaultComponent", "コンポーネントの初期値", System.String, "", None),
-                ConfigurationPropertyInfo("DefaultMilestone", "マイルストーンの初期値", System.String, "", None),
-                ConfigurationPropertyInfo("DefaultPriority", "優先度の初期値", System.String, "", None),
+                ConfigurationPropertyInfo("DefaultComponent", "コンポーネントの初期値", System.String, None, None),
+                ConfigurationPropertyInfo("DefaultMilestone", "マイルストーンの初期値", System.String, None, None),
+                ConfigurationPropertyInfo("DefaultPriority", "優先度の初期値", System.String, None, None),
+                ConfigurationPropertyInfo("DefaultResolution", "クローズ時の解決方法の初期値", System.String, None, None),
             ]))
 
     def GetCommands(self):
@@ -276,17 +276,22 @@ class TicketContext(Context):
             t.Get(id)
             self.Console.NotifyMessage((u"#%d %s") % (t.ID, t.Summary))
 
-
     def List(self, args):
         self.Query("status!=closed")
 
     def Delete(self, args):
         TracContext.Connect()
-        pass
+        t = Ticket()
+        t.Get(int(args))
+        self.Console.NotifyMessage((u"#%d %s を削除しました") % (t.ID, t.Summary))
+        t.Delete()
 
     def Edit(self, args):
         TracContext.Connect()
-        pass
+        nextContext = self.Console.GetContext(DLRContextHelper.Wrap(CurrentSession, "EditTicket", CreateTicketContext), CurrentSession)
+        self.Console.PushContext(nextContext)
+        loadMethod = nextContext.GetCommand("Load")
+        loadMethod.Invoke(nextContext, tuple([args]))
 
     def Get(self, args):
         TracContext.Connect()
@@ -305,7 +310,6 @@ class TicketContext(Context):
         TracContext.Connect()
 
         nextContext = self.Console.GetContext(DLRContextHelper.Wrap(CurrentSession, "NewTicket", CreateTicketContext), CurrentSession)
-        self.Console.NotifyMessage(("Context: %s") % (nextContext))
         self.Console.PushContext(nextContext)
 
 class CreateTicketContext(Context):
@@ -315,39 +319,89 @@ class CreateTicketContext(Context):
 
         self.config = DLRBasicConfiguration(self.CurrentSession, "NewTicket", Array[ConfigurationPropertyInfo](
             [
-                ConfigurationPropertyInfo("Summary", "概要", System.String, "", None),
+                ConfigurationPropertyInfo("Summary", "概要", System.String, None, None),
                 ConfigurationPropertyInfo("Description", "説明", System.String, "", None),
                 ConfigurationPropertyInfo("Priority", "優先度", System.String, self.ticketConfig.GetValue("DefaultPriority"), None),
                 ConfigurationPropertyInfo("Milestone", "マイルストーン", System.String, self.ticketConfig.GetValue("DefaultMilestone"), None),
                 ConfigurationPropertyInfo("Component", "コンポーネント", System.String, self.ticketConfig.GetValue("DefaultComponent"), None),
             ]))
-        pass
+        self.editConfig = DLRBasicConfiguration(self.CurrentSession, "EditTicket", Array[ConfigurationPropertyInfo](
+            [
+                ConfigurationPropertyInfo("Resolution", "解決方法", System.String, self.rootConfig.GetValue("DefaultResolution"), None),
+                ConfigurationPropertyInfo("Status", "状態", System.String, None, None),
+            ]))
+
+        self.ticket = Ticket()
+        self.isEdit = False
+
     def GetCommands(self):
         dict = Context.GetCommands(self)
-        dict["Save"] = "チケットを登録します"
+        if(self.isEdit):
+            dict["Close"] = "指定されたアクションでチケットをクローズします"
+            dict["Save"] = "指定したコメントでチケットを更新します"
+        else:
+            dict["Save"] = "指定したコメントでチケットを登録します"
+
         return dict
 
     def OnUninitialize(self):
-        self.config.SetValue("Summary","")
-        self.config.SetValue("Description","")
+        self.config.SetValue("Summary",None)
+        self.config.SetValue("Description",None)
         self.config.SetValue("Priority", ticketConfig.GetValue("DefaultPriority"))
         self.config.SetValue("Milestone", ticketConfig.GetValue("DefaultMilestone"))
         self.config.SetValue("Component", ticketConfig.GetValue("DefaultComponent"))
 
     def get_Configurations(self):
-        return Array[IConfiguration]([ self.config ])
+        if(self.isEdit):
+            return Array[IConfiguration]([ self.config, self.editConfig ])
+        else:
+            return Array[IConfiguration]([ self.config ])
 
-    def Save(self, args):
-        TracContext.Connect()
+    def Accept(self, comment = ""):
+        if(self.isEdit == False):
+            return
+        self.ticket.Status = "accepted"
+        self.Save(comment)
 
-        self.ticket = Ticket()
+    def Close(self, comment = ""):
+        if(self.isEdit == False):
+            return
+        if(self.editConfig.GetValue("Resolution") == None):
+            self.Console.NotifyMessage("Resolutionが未指定です")
+            return
+        self.ticket.Resolution = self.editConfig.GetValue("Resolution")
+        self.ticket.Status = "closed"
+        self.Save(comment)
+
+    def Load(self, args):
+        self.ticket.Get(int(args))
+        self.config.SetValue("Summary", self.ticket.Summary)
+        self.config.SetValue("Description", self.ticket.Description)
+        self.config.SetValue("Priority", self.ticket.Priority)
+        self.config.SetValue("Milestone", self.ticket.Milestone)
+        self.config.SetValue("Component", self.ticket.Component)
+        self.editConfig.SetValue("Status", self.ticket.Status)
+        self.editConfig.SetValue("Resolution", self.ticket.Resolution)
+
+        self.isEdit = True
+
+    def Save(self, comment = ""):
+        if(self.editConfig.GetValue("Summary") == None):
+            self.Console.NotifyMessage("Summaryが未指定です")
+            return
+
         self.ticket.Summary = self.config.GetValue("Summary")
         self.ticket.Description = self.config.GetValue("Description")
         self.ticket.Priority = self.config.GetValue("Priority")
         self.ticket.Milestone = self.config.GetValue("Milestone")
         self.ticket.Component = self.config.GetValue("Component")
-        self.ticket.Create()
-        self.Console.NotifyMessage(("チケット: #%dを作成しました") % (self.ticket.ID))
+
+        if(self.isEdit):
+            self.ticket.Update(comment)
+        else:
+            self.ticket.Create()
+
+        self.Console.NotifyMessage(("Ticket: #%dを%sしました") % (self.ticket.ID, "更新" if self.isEdit else "登録"))
         self.Exit()
 
 # コンソールチャンネルを追加する
